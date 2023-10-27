@@ -75,6 +75,8 @@ def init_nets(net_configs, n_parties, args, device='cpu'):
         n_classes = 47
     elif args.dataset == 'xray':
         n_classes = 2
+    elif args.dataset == 'xray8':
+        n_classes = 20
     if args.normal_model:
         for net_i in range(n_parties):
             if args.model == 'simple-cnn':
@@ -257,7 +259,6 @@ def train_net_fedcon(net_id, net, global_net, previous_nets, train_dataloader, t
 
     logger.info('>> Pre-Training Training accuracy: {}'.format(train_acc))
     logger.info('>> Pre-Training Test accuracy: {}'.format(test_acc))
-
 
     if args_optimizer == 'adam':
         optimizer = optim.Adam(filter(lambda p: p.requires_grad, net.parameters()), lr=lr, weight_decay=args.reg)

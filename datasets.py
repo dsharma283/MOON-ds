@@ -2,6 +2,7 @@ import torch.utils.data as data
 from PIL import Image
 import numpy as np
 import torchvision
+import torch
 from torchvision.datasets import MNIST, EMNIST, CIFAR10, CIFAR100, SVHN, FashionMNIST, ImageFolder, DatasetFolder, utils
 
 import os
@@ -11,6 +12,7 @@ import logging
 logging.basicConfig()
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
+logging.getLogger('PIL').setLevel(logging.WARNING)
 
 IMG_EXTENSIONS = ('.jpg', '.jpeg', '.png', '.ppm', '.bmp', '.pgm', '.tif', '.tiff', '.webp')
 
@@ -20,7 +22,6 @@ def mkdirs(dirpath):
         os.makedirs(dirpath)
     except Exception as _:
         pass
-
 
 
 class CIFAR10_truncated(data.Dataset):
@@ -143,8 +144,6 @@ class CIFAR100_truncated(data.Dataset):
         return len(self.data)
 
 
-
-
 class ImageFolder_custom(DatasetFolder):
     def __init__(self, root, dataidxs=None, train=True, transform=None, target_transform=None):
         self.root = root
@@ -177,3 +176,52 @@ class ImageFolder_custom(DatasetFolder):
             return len(self.samples)
         else:
             return len(self.dataidxs)
+
+
+class ChestXrayDataSet(data.Dataset):
+    def __init__(self, data_dir, image_list_file, transform=None):
+        """
+        Args:
+            data_dir: path to image directory.
+            image_list_file: path to the file containing images
+                with corresponding labels.
+            transform: optional transform to be applied on a sample.
+        """
+        image_names = []
+        labels = []
+        with open(image_list_file, "r") as f:
+            for idx, line in enumerate(f):
+                if idx == 0:
+                    continue
+                items = line.strip('\n').split(',')[:-1]
+                image_name= items[0]
+                label = items[1:]
+                label = [int(i) for i in label]
+                image_name = os.path.join(data_dir, "images", image_name)
+                image_names.append(image_name)
+                labels.append(label)
+
+        self.image_names = image_names
+        self.labels = labels
+        self.transform = transform
+
+    def __getitem__(self, index):
+        """
+        Args:
+            index: the index of item
+
+        Returns:
+            image and its labels
+        """
+        image_name = self.image_names[index]
+        #print(image_name)
+        image = Image.open(image_name).convert('RGB')
+        label = np.argmax(self.labels[index])
+        #label = np.asarray(self.labels[index])
+        if self.transform is not None:
+            image = self.transform(image)
+        return image, label
+
+    def __len__(self):
+        return len(self.image_names)
+

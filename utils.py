@@ -11,7 +11,7 @@ import random
 from sklearn.metrics import confusion_matrix
 
 from model import *
-from datasets import CIFAR10_truncated, CIFAR100_truncated, ImageFolder_custom
+from datasets import CIFAR10_truncated, CIFAR100_truncated, ImageFolder_custom, ChestXrayDataSet
 
 logging.basicConfig()
 logger = logging.getLogger()
@@ -67,6 +67,21 @@ def load_tinyimagenet_data(datadir):
     return (X_train, y_train, X_test, y_test)
 
 
+def load_xray8_data(datadir):
+    transform = transforms.Compose([transforms.ToTensor()])
+    dl_obj = ChestXrayDataSet
+    base_path=os.path.join(datadir, 'LongTailCXR')
+    train_ds = dl_obj(base_path, image_list_file=os.path.join(base_path, 'train.csv'))
+    test_ds = dl_obj(base_path, image_list_file=os.path.join(base_path, 'test.csv'))
+
+    X_train, y_train = np.asarray(train_ds.image_names), np.asarray([np.argmax(lb) for lb in train_ds.labels])
+    X_test, y_test = np.asarray(test_ds.image_names), np.asarray([np.argmax(lb) for lb in test_ds.labels])
+
+    #X_train, y_train = np.asarray(train_ds.image_names), np.asarray(train_ds.labels)
+    #X_test, y_test = np.asarray(test_ds.image_names), np.asarray(test_ds.labels)
+    return(X_train, y_train, X_test, y_test)
+
+
 def record_net_data_stats(y_train, net_dataidx_map, logdir):
     net_cls_counts = {}
 
@@ -95,6 +110,8 @@ def partition_data(dataset, datadir, logdir, partition, n_parties, beta=0.4):
         X_train, y_train, X_test, y_test = load_cifar100_data(datadir)
     elif dataset == 'tinyimagenet':
         X_train, y_train, X_test, y_test = load_tinyimagenet_data(datadir)
+    elif dataset == 'xray8':
+        X_train, y_train, X_test, y_test = load_xray8_data(datadir)
 
     n_train = y_train.shape[0]
 
@@ -112,6 +129,8 @@ def partition_data(dataset, datadir, logdir, partition, n_parties, beta=0.4):
             K = 100
         elif dataset == 'tinyimagenet':
             K = 200
+        elif dataset == 'xray8':
+            K = 20
             # min_require_size = 100
 
         N = y_train.shape[0]
@@ -217,10 +236,13 @@ def compute_accuracy(model, dataloader, get_confusion_matrix=False, device="cpu"
     else:
         with torch.no_grad():
             for batch_idx, (x, target) in enumerate(dataloader):
+                print(f"\rbatch_idx= {batch_idx}/{len(dataloader)}", end="")
                 #print("x:",x)
                 if device != 'cpu':
                     x, target = x.cuda(), target.to(dtype=torch.int64).cuda()
                 _,_,out = model(x)
+                #print(out)
+                #print(target)
                 loss = criterion(out, target)
                 _, pred_label = torch.max(out.data, 1)
                 loss_collector.append(loss.item())
@@ -243,6 +265,7 @@ def compute_accuracy(model, dataloader, get_confusion_matrix=False, device="cpu"
 
     if get_confusion_matrix:
         return correct / float(total), conf_matrix, avg_loss
+    print(f"compute accuracy done")
 
     return correct / float(total), avg_loss
 
@@ -339,14 +362,11 @@ def get_dataloader(dataset, datadir, train_bs, test_bs, dataidxs=None, noise_lev
                 transforms.ToTensor(),
                 normalize])
 
-
-
         train_ds = dl_obj(datadir, dataidxs=dataidxs, train=True, transform=transform_train, download=True)
         test_ds = dl_obj(datadir, train=False, transform=transform_test, download=True)
 
         train_dl = data.DataLoader(dataset=train_ds, batch_size=train_bs, drop_last=True, shuffle=True)
         test_dl = data.DataLoader(dataset=test_ds, batch_size=test_bs, shuffle=False)
-
 
     elif dataset == 'tinyimagenet':
         dl_obj = ImageFolder_custom
@@ -365,5 +385,23 @@ def get_dataloader(dataset, datadir, train_bs, test_bs, dataidxs=None, noise_lev
         train_dl = data.DataLoader(dataset=train_ds, batch_size=train_bs, drop_last=True, shuffle=True)
         test_dl = data.DataLoader(dataset=test_ds, batch_size=test_bs, shuffle=False)
 
+    elif dataset == 'xray8':
+        dl_obj = ChestXrayDataSet
+        transform_train = transforms.Compose([
+            transforms.Resize(128),
+            transforms.ToTensor()#,
+            #transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
+            ])
+        transform_test = transforms.Compose([
+            transforms.Resize(128),
+            transforms.ToTensor()#,
+            #transforms.Normalize((0.5,0.5, 0.5), (0.5, 0.5, 0.5))
+            ])
+        base_path=os.path.join(datadir, 'LongTailCXR')
+        train_ds = dl_obj(base_path, image_list_file=os.path.join(base_path, 'train.csv'), transform=transform_train)
+        test_ds = dl_obj(base_path, image_list_file=os.path.join(base_path, 'test.csv'), transform=transform_test)
+
+        train_dl = data.DataLoader(dataset=train_ds, batch_size=train_bs, drop_last=True, shuffle=True)
+        test_dl = data.DataLoader(dataset=test_ds, batch_size=test_bs, shuffle=False)
 
     return train_dl, test_dl, train_ds, test_ds
